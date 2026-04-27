@@ -6,4 +6,12 @@
 		in-report-size = <2>;
 		in-polling-period-us = <1000>;
 	};
+
+	hid_1: hid_1 {
+		compatible = "zephyr,hid-device";
+		label = "Macropad Vendor";
+		protocol-code = "none";
+		in-report-size = <3>;
+		in-polling-period-us = <1000>;
+	};
 };

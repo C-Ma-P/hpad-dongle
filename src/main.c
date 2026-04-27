@@ -71,6 +71,9 @@ static void handle_macropad_report(const macropad_report_t *report)
 	uint8_t current_keys;
 	uint8_t unsupported_keys;
 	bool input_activity;
+	int rc;
+
+	(void)usb_hid_consumer_forward_macropad_report(report);
 
 	unsupported_keys = report->keys & (uint8_t)~MACROPAD_KEY_MASK;
 	if (unsupported_keys != 0U) {
@@ -93,7 +96,7 @@ static void handle_macropad_report(const macropad_report_t *report)
 			uint16_t action = dongle_config_action_for_key(i);
 
 			if (action != ACTION_NONE) {
-				int rc = usb_hid_consumer_trigger_action(action);
+				rc = usb_hid_consumer_trigger_action(action);
 
 				if (rc != 0) {
 					LOG_WRN("HID action key=%u action=%u failed: %d",
@@ -112,7 +115,7 @@ static void handle_macropad_report(const macropad_report_t *report)
 			: -report->encoder_delta;
 
 		for (int s = 0; s < steps; s++) {
-			int rc = usb_hid_consumer_trigger_action(action);
+			rc = usb_hid_consumer_trigger_action(action);
 
 			if (rc != 0) {
 				LOG_WRN("HID encoder volume action=%u failed: %d", action, rc);
@@ -123,7 +126,7 @@ static void handle_macropad_report(const macropad_report_t *report)
 	bool encoder_pressed_now = (report->encoder_pressed != 0U);
 
 	if (!previous_encoder_pressed && encoder_pressed_now) {
-		int rc = usb_hid_consumer_trigger_action(DONGLE_ACTION_MUTE);
+		rc = usb_hid_consumer_trigger_action(DONGLE_ACTION_MUTE);
 
 		if (rc != 0) {
 			LOG_WRN("HID encoder mute action failed: %d", rc);
