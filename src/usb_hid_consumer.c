@@ -76,13 +76,13 @@ static const uint8_t vendor_hid_report_desc[] = {
 	HID_LOGICAL_MIN8(0x00),
 	HID_LOGICAL_MAX16(0xFF, 0x00),
 	HID_REPORT_SIZE(8),
-	HID_REPORT_COUNT(sizeof(macropad_report_t)),
+	HID_REPORT_COUNT(sizeof(host_macropad_report_t)),
 	HID_INPUT(0x02),
 	HID_END_COLLECTION,
 };
 
 UDC_STATIC_BUF_DEFINE(consumer_hid_buf, sizeof(uint16_t));
-UDC_STATIC_BUF_DEFINE(vendor_hid_buf, sizeof(macropad_report_t));
+UDC_STATIC_BUF_DEFINE(vendor_hid_buf, sizeof(host_macropad_report_t));
 K_MSGQ_DEFINE(consumer_report_queue, sizeof(uint16_t), USB_HID_CONSUMER_QUEUE_LEN, 4);
 K_KERNEL_STACK_DEFINE(usb_hid_workq_stack, USB_HID_WORKQ_STACK_SIZE);
 
@@ -100,7 +100,7 @@ static atomic_t vendor_submit_pending;
 /* Vendor HID latest-report slot: new reports overwrite the slot so the queue
  * never fills up when no host reader has the hidraw device open. */
 static struct k_spinlock vendor_slot_lock;
-static macropad_report_t vendor_slot_report;
+static host_macropad_report_t vendor_slot_report;
 static bool vendor_slot_dirty;
 
 static void usb_hid_consumer_work_handler(struct k_work *work);
@@ -176,6 +176,9 @@ static void usb_hid_vendor_iface_ready(const struct device *dev, const bool read
 
 	vendor_hid_ready = ready;
 	LOG_INF("Vendor HID interface %s", ready ? "ready" : "not ready");
+	if (ready) {
+		usb_hid_submit_vendor_work();
+	}
 }
 
 static int usb_hid_consumer_get_report(const struct device *dev,
@@ -209,12 +212,12 @@ static int usb_hid_vendor_get_report(const struct device *dev,
 		return -ENOTSUP;
 	}
 
-	if (len < sizeof(macropad_report_t)) {
+	if (len < sizeof(host_macropad_report_t)) {
 		return -EINVAL;
 	}
 
-	memset(buf, 0, sizeof(macropad_report_t));
-	return sizeof(macropad_report_t);
+	memset(buf, 0, sizeof(host_macropad_report_t));
+	return sizeof(host_macropad_report_t);
 }
 
 static const struct hid_device_ops consumer_hid_ops = {
@@ -315,7 +318,7 @@ static void usb_hid_consumer_work_handler(struct k_work *work)
 
 static void usb_hid_vendor_work_handler(struct k_work *work)
 {
-	macropad_report_t report;
+	host_macropad_report_t report;
 	k_spinlock_key_t key;
 	bool has_data;
 	int rc;
@@ -476,7 +479,7 @@ int usb_hid_consumer_trigger_action(uint16_t action_id)
 	return 0;
 }
 
-int usb_hid_consumer_forward_macropad_report(const macropad_report_t *report)
+int usb_hid_consumer_forward_macropad_report(const host_macropad_report_t *report)
 {
 	k_spinlock_key_t key;
 
@@ -484,7 +487,7 @@ int usb_hid_consumer_forward_macropad_report(const macropad_report_t *report)
 		return -EINVAL;
 	}
 
-	if (!usb_initialized || !vendor_hid_ready) {
+	if (!usb_initialized) {
 		return 0;
 	}
 
@@ -497,10 +500,7 @@ int usb_hid_consumer_forward_macropad_report(const macropad_report_t *report)
 	vendor_slot_dirty = true;
 	k_spin_unlock(&vendor_slot_lock, key);
 
-	/* Only kick work if no transfer is already in flight. */
-	if (atomic_cas(&vendor_submit_pending, 0, 1)) {
-		usb_hid_submit_vendor_work();
-	}
+	usb_hid_submit_vendor_work();
 
 	return 0;
 }

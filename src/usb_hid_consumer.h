@@ -7,6 +7,6 @@
 
 int usb_hid_consumer_init(void);
 int usb_hid_consumer_trigger_action(uint16_t action_id);
-int usb_hid_consumer_forward_macropad_report(const macropad_report_t *report);
+int usb_hid_consumer_forward_macropad_report(const host_macropad_report_t *report);
 
 #endif
