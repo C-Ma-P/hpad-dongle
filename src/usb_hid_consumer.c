@@ -36,6 +36,7 @@ LOG_MODULE_REGISTER(usb_hid_consumer, LOG_LEVEL_INF);
 #define USB_HID_WORKQ_PRIORITY 5
 #define USB_HID_CONSUMER_QUEUE_LEN 32
 #define USB_HID_VENDOR_QUEUE_LEN 32
+#define USB_HID_VENDOR_CONFIG_REPORT_SIZE sizeof(macropad_config_t)
 
 USBD_DEVICE_DEFINE(dongle_usbd,
 		   DEVICE_DT_GET(DT_NODELABEL(zephyr_udc0)),
@@ -78,6 +79,8 @@ static const uint8_t vendor_hid_report_desc[] = {
 	HID_REPORT_SIZE(8),
 	HID_REPORT_COUNT(sizeof(host_macropad_report_t)),
 	HID_INPUT(0x02),
+	HID_REPORT_COUNT(USB_HID_VENDOR_CONFIG_REPORT_SIZE),
+	HID_OUTPUT(0x02),
 	HID_END_COLLECTION,
 };
 
@@ -96,6 +99,7 @@ static bool usb_initialized;
 static bool usb_hid_workq_started;
 static atomic_t consumer_submit_pending;
 static atomic_t vendor_submit_pending;
+static usb_hid_vendor_config_handler_t vendor_config_handler;
 
 /* Vendor HID latest-report slot: new reports overwrite the slot so the queue
  * never fills up when no host reader has the hidraw device open. */
@@ -220,6 +224,42 @@ static int usb_hid_vendor_get_report(const struct device *dev,
 	return sizeof(host_macropad_report_t);
 }
 
+static int usb_hid_vendor_set_report(const struct device *dev,
+				  const uint8_t type, const uint8_t id,
+				  const uint16_t len, const uint8_t *const buf)
+{
+	const uint8_t *payload = buf;
+	uint16_t payload_len = len;
+	macropad_config_t config;
+
+	ARG_UNUSED(dev);
+	ARG_UNUSED(id);
+
+	if (type != HID_REPORT_TYPE_OUTPUT) {
+		return -ENOTSUP;
+	}
+
+	if ((payload_len == (USB_HID_VENDOR_CONFIG_REPORT_SIZE + 1U)) &&
+	    (payload[0] == 0U)) {
+		payload++;
+		payload_len--;
+	}
+
+	if (payload_len != sizeof(config)) {
+		return -EINVAL;
+	}
+
+	memcpy(&config, payload, sizeof(config));
+	if (config.kind != MACROPAD_CONFIG_KIND_KEY_COLORS) {
+		return -EINVAL;
+	}
+	if (vendor_config_handler != NULL) {
+		vendor_config_handler(&config);
+	}
+
+	return 0;
+}
+
 static const struct hid_device_ops consumer_hid_ops = {
 	.iface_ready = usb_hid_consumer_iface_ready,
 	.get_report = usb_hid_consumer_get_report,
@@ -229,6 +269,7 @@ static const struct hid_device_ops consumer_hid_ops = {
 static const struct hid_device_ops vendor_hid_ops = {
 	.iface_ready = usb_hid_vendor_iface_ready,
 	.get_report = usb_hid_vendor_get_report,
+	.set_report = usb_hid_vendor_set_report,
 	.input_report_done = usb_vendor_input_report_done,
 };
 
@@ -447,6 +488,11 @@ int usb_hid_consumer_init(void)
 	usb_initialized = true;
 	LOG_INF("USB consumer control + vendor HID initialized");
 	return 0;
+}
+
+void usb_hid_consumer_set_config_handler(usb_hid_vendor_config_handler_t handler)
+{
+	vendor_config_handler = handler;
 }
 
 int usb_hid_consumer_trigger_action(uint16_t action_id)

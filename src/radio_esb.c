@@ -64,6 +64,7 @@ LOG_MODULE_REGISTER(radio_esb, LOG_LEVEL_INF);
 #define RADIO_EVENT_RX BIT(0)
 
 static struct k_work radio_work;
+static struct k_mutex radio_tx_lock;
 static atomic_t pending_events;
 static radio_esb_report_handler_t macropad_report_handler;
 static bool radio_initialized;
@@ -142,6 +143,7 @@ int radio_esb_init(const struct esb_addr_config *addr_config, uint8_t rf_channel
 	config.payload_length = sizeof(macropad_report_t);
 
 	k_work_init(&radio_work, radio_esb_work_handler);
+	k_mutex_init(&radio_tx_lock);
 	atomic_clear(&pending_events);
 	macropad_report_handler = report_handler;
 
@@ -197,5 +199,35 @@ int radio_esb_start(void)
 	}
 
 	LOG_INF("ESB receiver started");
+	return 0;
+}
+
+int radio_esb_queue_macropad_config(const macropad_config_t *config)
+{
+	RADIO_ESB_PAYLOAD payload;
+	int rc;
+
+	if (!radio_initialized) {
+		return -EAGAIN;
+	}
+	if ((config == NULL) || (config->kind != MACROPAD_CONFIG_KIND_KEY_COLORS)) {
+		return -EINVAL;
+	}
+
+	memset(&payload, 0, sizeof(payload));
+	payload.pipe = 0U;
+	payload.length = sizeof(*config);
+	memcpy(payload.data, config, sizeof(*config));
+
+	k_mutex_lock(&radio_tx_lock, K_FOREVER);
+	radio_esb_api_flush_tx();
+	rc = radio_esb_api_write_payload(&payload);
+	k_mutex_unlock(&radio_tx_lock);
+	if (rc != 0) {
+		LOG_WRN("Failed to queue macropad config ACK payload: %d", rc);
+		return rc;
+	}
+
+	LOG_INF("Queued macropad color config for ACK delivery");
 	return 0;
 }

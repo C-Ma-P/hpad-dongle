@@ -26,6 +26,7 @@ static bool previous_encoder_pressed;
 static bool macropad_connected;
 
 static void macropad_disconnect_work_handler(struct k_work *work);
+static void handle_macropad_config(const macropad_config_t *config);
 
 static void led_off_work_handler(struct k_work *work)
 {
@@ -182,6 +183,15 @@ static void handle_macropad_report(const macropad_report_t *report)
 	previous_encoder_pressed = (report->encoder_pressed != 0U);
 }
 
+static void handle_macropad_config(const macropad_config_t *config)
+{
+	int rc = radio_esb_queue_macropad_config(config);
+
+	if (rc != 0) {
+		LOG_WRN("Failed to queue macropad config: %d", rc);
+	}
+}
+
 int main(void)
 {
 	struct dongle_identity identity;
@@ -200,6 +210,7 @@ int main(void)
 	}
 
 	LOG_INF("Initializing USB composite HID + CDC ACM");
+	usb_hid_consumer_set_config_handler(handle_macropad_config);
 	rc = usb_hid_consumer_init();
 	if (rc != 0) {
 		LOG_ERR("usb_hid_consumer_init failed: %d", rc);
