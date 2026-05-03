@@ -9,6 +9,8 @@ target_sources(app PRIVATE
 	src/main.c
 	src/radio_esb.c
 	src/radio_identity.c
-	src/usb_hid_consumer.c
+	src/usb_device.c
+	src/hid_consumer.c
+	src/hid_vendor.c
 	src/dongle_config.c
 )

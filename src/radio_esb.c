@@ -210,7 +210,7 @@ int radio_esb_queue_macropad_config(const macropad_config_t *config)
 	if (!radio_initialized) {
 		return -EAGAIN;
 	}
-	if ((config == NULL) || (config->kind != MACROPAD_CONFIG_KIND_KEY_COLORS)) {
+	if ((config == NULL) || (config->kind != HPAD_PROTOCOL_CONFIG_KIND_KEY_COLORS)) {
 		return -EINVAL;
 	}
 

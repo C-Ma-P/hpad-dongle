@@ -7,9 +7,11 @@
 #include <zephyr/sys/util.h>
 
 #include "dongle_config.h"
+#include "hid_consumer.h"
+#include "hid_vendor.h"
 #include "radio_esb.h"
 #include "radio_identity.h"
-#include "usb_hid_consumer.h"
+#include "usb_device.h"
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
@@ -81,10 +83,10 @@ static void forward_macropad_report(const macropad_report_t *report, bool connec
 		.encoder_delta = report->encoder_delta,
 		.encoder_pressed = report->encoder_pressed,
 		.battery_mv = report->battery_mv,
-		.charging = report->charging,
+		.usb_power_present = report->usb_power_present,
 	};
 
-	(void)usb_hid_consumer_forward_macropad_report(&host_report);
+	(void)hid_vendor_forward_macropad_report(&host_report);
 }
 
 static void macropad_disconnect_work_handler(struct k_work *work)
@@ -94,7 +96,7 @@ static void macropad_disconnect_work_handler(struct k_work *work)
 		.encoder_delta = 0,
 		.encoder_pressed = 0U,
 		.battery_mv = 0U,
-		.charging = 0U,
+		.usb_power_present = 0U,
 	};
 
 	ARG_UNUSED(work);
@@ -142,7 +144,7 @@ static void handle_macropad_report(const macropad_report_t *report)
 			uint16_t action = dongle_config_action_for_key(i);
 
 			if (action != ACTION_NONE) {
-				rc = usb_hid_consumer_trigger_action(action);
+				rc = hid_consumer_trigger_action(action);
 
 				if (rc != 0) {
 					LOG_WRN("HID action key=%u action=%u failed: %d",
@@ -161,7 +163,7 @@ static void handle_macropad_report(const macropad_report_t *report)
 			: -report->encoder_delta;
 
 		for (int s = 0; s < steps; s++) {
-			rc = usb_hid_consumer_trigger_action(action);
+			rc = hid_consumer_trigger_action(action);
 
 			if (rc != 0) {
 				LOG_WRN("HID encoder volume action=%u failed: %d", action, rc);
@@ -172,7 +174,7 @@ static void handle_macropad_report(const macropad_report_t *report)
 	bool encoder_pressed_now = (report->encoder_pressed != 0U);
 
 	if (!previous_encoder_pressed && encoder_pressed_now) {
-		rc = usb_hid_consumer_trigger_action(DONGLE_ACTION_MUTE);
+		rc = hid_consumer_trigger_action(DONGLE_ACTION_MUTE);
 
 		if (rc != 0) {
 			LOG_WRN("HID encoder mute action failed: %d", rc);
@@ -210,10 +212,10 @@ int main(void)
 	}
 
 	LOG_INF("Initializing USB composite HID + CDC ACM");
-	usb_hid_consumer_set_config_handler(handle_macropad_config);
-	rc = usb_hid_consumer_init();
+	hid_vendor_set_config_handler(handle_macropad_config);
+	rc = usb_device_init();
 	if (rc != 0) {
-		LOG_ERR("usb_hid_consumer_init failed: %d", rc);
+		LOG_ERR("usb_device_init failed: %d", rc);
 		return 0;
 	}
 
