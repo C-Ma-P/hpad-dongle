@@ -6,8 +6,8 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
 
+#include "consumer_action_engine.h"
 #include "dongle_config.h"
-#include "hid_consumer.h"
 #include "hid_vendor.h"
 #include "radio_esb.h"
 #include "radio_identity.h"
@@ -23,8 +23,6 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 static const struct gpio_dt_spec status_led = GPIO_DT_SPEC_GET(LED_NODE, gpios);
 static struct k_work_delayable led_off_work;
 static struct k_work_delayable macropad_disconnect_work;
-static uint8_t previous_keys;
-static bool previous_encoder_pressed;
 static bool macropad_connected;
 
 static void macropad_disconnect_work_handler(struct k_work *work);
@@ -106,17 +104,14 @@ static void macropad_disconnect_work_handler(struct k_work *work)
 	}
 
 	macropad_connected = false;
-	previous_keys = 0U;
-	previous_encoder_pressed = false;
+	consumer_action_engine_reset();
 	forward_macropad_report(&report, false);
 }
 
 static void handle_macropad_report(const macropad_report_t *report)
 {
-	uint8_t current_keys;
 	uint8_t unsupported_keys;
 	bool input_activity;
-	int rc;
 
 	macropad_connected = true;
 	(void)k_work_reschedule(&macropad_disconnect_work,
@@ -128,61 +123,12 @@ static void handle_macropad_report(const macropad_report_t *report)
 		LOG_WRN("Ignoring unsupported key bits: 0x%02x", unsupported_keys);
 	}
 
-	current_keys = report->keys & MACROPAD_KEY_MASK;
-	input_activity = (current_keys != previous_keys) ||
-		(report->encoder_delta != 0) ||
-		(previous_encoder_pressed != (report->encoder_pressed != 0U));
-
+	input_activity = consumer_action_engine_input_activity(report);
 	if (input_activity) {
 		blink_status_led_once();
 	}
 
-	uint8_t newly_pressed = current_keys & ~previous_keys;
-
-	for (uint8_t i = 0; i < KEY_COUNT; i++) {
-		if (newly_pressed & BIT(i)) {
-			uint16_t action = dongle_config_action_for_key(i);
-
-			if (action != ACTION_NONE) {
-				rc = hid_consumer_trigger_action(action);
-
-				if (rc != 0) {
-					LOG_WRN("HID action key=%u action=%u failed: %d",
-						i, action, rc);
-				}
-			}
-		}
-	}
-
-	if (report->encoder_delta != 0) {
-		uint16_t action = (report->encoder_delta > 0)
-			? DONGLE_ACTION_VOLUME_UP
-			: DONGLE_ACTION_VOLUME_DOWN;
-		int steps = (report->encoder_delta > 0)
-			? report->encoder_delta
-			: -report->encoder_delta;
-
-		for (int s = 0; s < steps; s++) {
-			rc = hid_consumer_trigger_action(action);
-
-			if (rc != 0) {
-				LOG_WRN("HID encoder volume action=%u failed: %d", action, rc);
-			}
-		}
-	}
-
-	bool encoder_pressed_now = (report->encoder_pressed != 0U);
-
-	if (!previous_encoder_pressed && encoder_pressed_now) {
-		rc = hid_consumer_trigger_action(DONGLE_ACTION_MUTE);
-
-		if (rc != 0) {
-			LOG_WRN("HID encoder mute action failed: %d", rc);
-		}
-	}
-
-	previous_keys = current_keys;
-	previous_encoder_pressed = (report->encoder_pressed != 0U);
+	consumer_action_engine_process_report(report);
 }
 
 static void handle_macropad_config(const macropad_config_t *config)

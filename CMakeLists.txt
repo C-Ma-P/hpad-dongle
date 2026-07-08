@@ -13,4 +13,5 @@ target_sources(app PRIVATE
 	src/hid_consumer.c
 	src/hid_vendor.c
 	src/dongle_config.c
+	src/consumer_action_engine.c
 )
